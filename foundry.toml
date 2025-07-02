@@ -1,0 +1,14 @@
+[profile.default]
+src = "contracts"
+out = "out"
+libs = ["lib"]
+solc_version = "0.7.6"
+optimizer = true
+optimizer_runs = 200
+remappings = [
+    "@openzeppelin=lib/openzeppelin-contracts",
+    "base64-sol=lib/base64",
+    "@nomad-xyz=lib/ExcessivelySafeCall",
+    "@uniswap=lib/solidity-lib"
+]
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
