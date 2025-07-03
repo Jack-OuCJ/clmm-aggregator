@@ -14,27 +14,20 @@ import {MixedRouteQuoterV1} from "contracts/periphery/lens/MixedRouteQuoterV1.so
 import {QuoterV2} from "contracts/periphery/lens/QuoterV2.sol";
 import {SwapRouter} from "contracts/periphery/SwapRouter.sol";
 import {Token} from "contracts/core/utils/Token.sol";
+import {WETH9} from "../contracts/core/utils/WETH.sol";
+import {UniswapV3LikeOracle} from "../contracts/periphery/UniswapV3LikeOracle.sol";
+import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
-contract DeployCL is Script {
+contract DeployAddress is Script {
     using stdJson for string;
 
     uint256 public deployPrivateKey = vm.envUint("PRIVATE_KEY_DEPLOY");
     address public deployerAddress = vm.rememberKey(deployPrivateKey);
     string public constantsFilename = vm.envString("CONSTANTS_FILENAME");
     string public outputFilename = vm.envString("OUTPUT_FILENAME");
+    address public poolFactoryOwner = deployerAddress;
     string public jsonConstants;
-
-    // loaded variables
-    address public team;
-    address public weth;
-    address public voter;
-    address public factoryRegistry;
-    address public poolFactoryOwner;
-    address public feeManager;
-    address public notifyAdmin;
-    address public factoryV2;
-    string public nftName;
-    string public nftSymbol;
+    uint256 constant INITIAL_TOKENS = 10000 ether;
 
     // deployed contracts
     CLPool public poolImplementation;
@@ -48,10 +41,7 @@ contract DeployCL is Script {
     SwapRouter public swapRouter;
 
     function run() public {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployerAddress = vm.addr(deployerPrivateKey);
-
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast(deployerAddress);
 
         string[] memory names = new string[](7);
         string[] memory symbols = new string[](7);
@@ -72,35 +62,43 @@ contract DeployCL is Script {
         names[6] = "Token G";
         symbols[6] = "G";
 
-        string memory root = vm.projectRoot();
-        string memory basePath = concat(root, "/script/constants/");
-        string memory path = concat(basePath, constantsFilename);
+        WETH9 weth = new WETH9();
 
-        vm.startBroadcast(deployerAddress);
         // deploy pool + factory
         poolImplementation = new CLPool();
         poolFactory = new CLFactory({_poolImplementation: address(poolImplementation)});
-
         poolFactory.setOwner(poolFactoryOwner);
 
-        swapRouter = new SwapRouter({_factory: address(poolFactory), _WETH9: weth, _oracleAddress: address(0)});
-        vm.stopBroadcast();
+        int24[] memory tickSpacings = new int24[](3);
+        tickSpacings[0] = 10;
+        tickSpacings[1] = 60;
+        tickSpacings[2] = 200;
 
-        // write to file
-        path = concat(basePath, "output/DeployCL-");
-        path = concat(path, outputFilename);
-        vm.writeJson(vm.serializeAddress("", "PoolImplementation", address(poolImplementation)), path);
-        vm.writeJson(vm.serializeAddress("", "poolFactory", address(poolFactory)), path);
-        vm.writeJson(vm.serializeAddress("", "swapRouter", address(swapRouter)), path);
-
+        IERC20[] memory existingConnectors = new IERC20[](7);
         for (uint256 i = 0; i < names.length; i++) {
             Token token = new Token(names[i], symbols[i]);
-            tokenAddresses[i] = address(token);
-            vm.writeJson(vm.serializeAddress("", names[i], address(tokenAddresses[i])), path);
-        }
-    }
 
-    function concat(string memory a, string memory b) internal pure returns (string memory) {
-        return string(abi.encodePacked(a, b));
+            tokenAddresses[i] = address(token);
+            existingConnectors[i] = IERC20(address(token));
+            console.log("%s Address                = \"%s\";", names[i], vm.toString(tokenAddresses[i]));
+        }
+
+        bytes memory bytecode_cl = type(CLPool).creationCode;
+
+        bytes32 initCodeHash = keccak256(bytecode_cl);
+
+        UniswapV3LikeOracle oracle = new UniswapV3LikeOracle(address(poolFactory), initCodeHash, tickSpacings, existingConnectors);
+
+        swapRouter = new SwapRouter({_factory: address(poolFactory), _WETH9: address(weth), _oracleAddress: address(oracle)});
+
+        for (uint256 i = 0; i < names.length; i++) {
+            Token(tokenAddresses[i]).approve(address(swapRouter), INITIAL_TOKENS);
+        }
+        console.log("PoolImplementation Address     = \"%s\";", vm.toString(address(poolImplementation)));
+        console.log("poolFactory Address            = \"%s\";", vm.toString(address(poolFactory)));
+        console.log("swapRouter Address             = \"%s\";", vm.toString(address(swapRouter)));
+        console.log("weth Address                   = \"%s\";", vm.toString(address(weth)));
+
+        vm.stopBroadcast();
     }
 }
