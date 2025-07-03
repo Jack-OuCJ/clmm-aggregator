@@ -12,14 +12,12 @@ interface ICLPoolActions {
     /// @param _token0 The first token of the pool by address sort order
     /// @param _token1 The second token of the pool by address sort order
     /// @param _tickSpacing The pool tick spacing
-    /// @param _factoryRegistry The address of the factory registry managing the pool factory
     /// @param _sqrtPriceX96 The initial sqrt price of the pool, as a Q64.96
     function initialize(
         address _factory,
         address _token0,
         address _token1,
         int24 _tickSpacing,
-        address _factoryRegistry,
         uint160 _sqrtPriceX96
     ) external;
 

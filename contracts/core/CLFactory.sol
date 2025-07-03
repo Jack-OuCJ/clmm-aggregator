@@ -3,7 +3,6 @@ pragma solidity =0.7.6;
 
 import "./interfaces/ICLFactory.sol";
 import "./interfaces/fees/IFeeModule.sol";
-import "./interfaces/IVoter.sol";
 import "./interfaces/IFactoryRegistry.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";
 import "@nomad-xyz/src/ExcessivelySafeCall.sol";
@@ -15,11 +14,7 @@ contract CLFactory is ICLFactory {
     using ExcessivelySafeCall for address;
 
     /// @inheritdoc ICLFactory
-    IVoter public immutable override voter;
-    /// @inheritdoc ICLFactory
     address public immutable override poolImplementation;
-    /// @inheritdoc ICLFactory
-    IFactoryRegistry public immutable override factoryRegistry;
     /// @inheritdoc ICLFactory
     address public override owner;
     /// @inheritdoc ICLFactory
@@ -43,12 +38,10 @@ contract CLFactory is ICLFactory {
 
     int24[] private _tickSpacings;
 
-    constructor(address _voter, address _poolImplementation) {
+    constructor(address _poolImplementation) {
         owner = msg.sender;
         swapFeeManager = msg.sender;
         unstakedFeeManager = msg.sender;
-        voter = IVoter(_voter);
-        factoryRegistry = IVoter(_voter).factoryRegistry();
         poolImplementation = _poolImplementation;
         defaultUnstakedFee = 100_000;
         emit OwnerChanged(address(0), msg.sender);
@@ -83,7 +76,6 @@ contract CLFactory is ICLFactory {
             _token0: token0,
             _token1: token1,
             _tickSpacing: tickSpacing,
-            _factoryRegistry: address(factoryRegistry),
             _sqrtPriceX96: sqrtPriceX96
         });
         allPools.push(pool);
@@ -166,10 +158,6 @@ contract CLFactory is ICLFactory {
 
     /// @inheritdoc ICLFactory
     function getUnstakedFee(address pool) external view override returns (uint24) {
-        address gauge = voter.gauges(pool);
-        if (!voter.isAlive(gauge) || gauge == address(0)) {
-            return 0;
-        }
         if (unstakedFeeModule != address(0)) {
             (bool success, bytes memory data) = unstakedFeeModule.excessivelySafeStaticCall(
                 200_000, 32, abi.encodeWithSelector(IFeeModule.getFee.selector, pool)

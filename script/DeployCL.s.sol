@@ -13,6 +13,7 @@ import {CustomUnstakedFeeModule} from "contracts/core/fees/CustomUnstakedFeeModu
 import {MixedRouteQuoterV1} from "contracts/periphery/lens/MixedRouteQuoterV1.sol";
 import {QuoterV2} from "contracts/periphery/lens/QuoterV2.sol";
 import {SwapRouter} from "contracts/periphery/SwapRouter.sol";
+import {Token} from "contracts/core/utils/Token.sol";
 
 contract DeployCL is Script {
     using stdJson for string;
@@ -47,54 +48,41 @@ contract DeployCL is Script {
     SwapRouter public swapRouter;
 
     function run() public {
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        address deployerAddress = vm.addr(deployerPrivateKey);
+
+        vm.startBroadcast(deployerPrivateKey);
+
+        string[] memory names = new string[](7);
+        string[] memory symbols = new string[](7);
+        address[] memory tokenAddresses = new address[](7);
+
+        names[0] = "Token A";
+        symbols[0] = "A";
+        names[1] = "Token B";
+        symbols[1] = "B";
+        names[2] = "Token C";
+        symbols[2] = "C";
+        names[3] = "Token D";
+        symbols[3] = "D";
+        names[4] = "Token E";
+        symbols[4] = "E";
+        names[5] = "Token F";
+        symbols[5] = "F";
+        names[6] = "Token G";
+        symbols[6] = "G";
+
         string memory root = vm.projectRoot();
         string memory basePath = concat(root, "/script/constants/");
         string memory path = concat(basePath, constantsFilename);
-        jsonConstants = vm.readFile(path);
-
-        team = abi.decode(vm.parseJson(jsonConstants, ".team"), (address));
-        weth = abi.decode(vm.parseJson(jsonConstants, ".WETH"), (address));
-        voter = abi.decode(vm.parseJson(jsonConstants, ".Voter"), (address));
-        factoryRegistry = abi.decode(vm.parseJson(jsonConstants, ".FactoryRegistry"), (address));
-        poolFactoryOwner = abi.decode(vm.parseJson(jsonConstants, ".poolFactoryOwner"), (address));
-        feeManager = abi.decode(vm.parseJson(jsonConstants, ".feeManager"), (address));
-        notifyAdmin = abi.decode(vm.parseJson(jsonConstants, ".notifyAdmin"), (address));
-        factoryV2 = abi.decode(vm.parseJson(jsonConstants, ".factoryV2"), (address));
-        nftName = abi.decode(vm.parseJson(jsonConstants, ".nftName"), (string));
-        nftSymbol = abi.decode(vm.parseJson(jsonConstants, ".nftSymbol"), (string));
-
-        require(address(voter) != address(0)); // sanity check for constants file fillled out correctly
 
         vm.startBroadcast(deployerAddress);
         // deploy pool + factory
         poolImplementation = new CLPool();
-        poolFactory = new CLFactory({_voter: voter, _poolImplementation: address(poolImplementation)});
+        poolFactory = new CLFactory({_poolImplementation: address(poolImplementation)});
 
-        // deploy nft contracts
-        nftDescriptor =
-            new NonfungibleTokenPositionDescriptor({_WETH9: address(weth), _nativeCurrencyLabelBytes: bytes32("ETH")});
-        nft = new NonfungiblePositionManager({
-            _factory: address(poolFactory),
-            _WETH9: address(weth),
-            _tokenDescriptor: address(nftDescriptor),
-            name: nftName,
-            symbol: nftSymbol
-        });
-
-        // deploy fee modules
-        swapFeeModule = new CustomSwapFeeModule({_factory: address(poolFactory)});
-        unstakedFeeModule = new CustomUnstakedFeeModule({_factory: address(poolFactory)});
-        poolFactory.setSwapFeeModule({_swapFeeModule: address(swapFeeModule)});
-        poolFactory.setUnstakedFeeModule({_unstakedFeeModule: address(unstakedFeeModule)});
-
-        // transfer permissions
-        nft.setOwner(team);
         poolFactory.setOwner(poolFactoryOwner);
-        poolFactory.setSwapFeeManager(feeManager);
-        poolFactory.setUnstakedFeeManager(feeManager);
 
-        mixedQuoter = new MixedRouteQuoterV1({_factory: address(poolFactory), _factoryV2: factoryV2, _WETH9: weth});
-        quoter = new QuoterV2({_factory: address(poolFactory), _WETH9: weth});
         swapRouter = new SwapRouter({_factory: address(poolFactory), _WETH9: weth, _oracleAddress: address(0)});
         vm.stopBroadcast();
 
@@ -102,14 +90,14 @@ contract DeployCL is Script {
         path = concat(basePath, "output/DeployCL-");
         path = concat(path, outputFilename);
         vm.writeJson(vm.serializeAddress("", "PoolImplementation", address(poolImplementation)), path);
-        vm.writeJson(vm.serializeAddress("", "PoolFactory", address(poolFactory)), path);
-        vm.writeJson(vm.serializeAddress("", "NonfungibleTokenPositionDescriptor", address(nftDescriptor)), path);
-        vm.writeJson(vm.serializeAddress("", "NonfungiblePositionManager", address(nft)), path);
-        vm.writeJson(vm.serializeAddress("", "SwapFeeModule", address(swapFeeModule)), path);
-        vm.writeJson(vm.serializeAddress("", "UnstakedFeeModule", address(unstakedFeeModule)), path);
-        vm.writeJson(vm.serializeAddress("", "MixedQuoter", address(mixedQuoter)), path);
-        vm.writeJson(vm.serializeAddress("", "Quoter", address(quoter)), path);
-        vm.writeJson(vm.serializeAddress("", "SwapRouter", address(swapRouter)), path);
+        vm.writeJson(vm.serializeAddress("", "poolFactory", address(poolFactory)), path);
+        vm.writeJson(vm.serializeAddress("", "swapRouter", address(swapRouter)), path);
+
+        for (uint256 i = 0; i < names.length; i++) {
+            Token token = new Token(names[i], symbols[i]);
+            tokenAddresses[i] = address(token);
+            vm.writeJson(vm.serializeAddress("", names[i], address(tokenAddresses[i])), path);
+        }
     }
 
     function concat(string memory a, string memory b) internal pure returns (string memory) {

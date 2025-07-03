@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity >=0.5.0;
 
-import {IVoter} from "contracts/core/interfaces/IVoter.sol";
 import {IFactoryRegistry} from "contracts/core/interfaces/IFactoryRegistry.sol";
 
 /// @title The interface for the CL Factory
@@ -49,17 +48,9 @@ interface ICLFactory {
     /// @param fee The default fee for a pool created with a given tickSpacing
     event TickSpacingEnabled(int24 indexed tickSpacing, uint24 indexed fee);
 
-    /// @notice The voter contract, used to create gauges
-    /// @return The address of the voter contract
-    function voter() external view returns (IVoter);
-
     /// @notice The address of the pool implementation contract used to deploy proxies / clones
     /// @return The address of the pool implementation contract
     function poolImplementation() external view returns (address);
-
-    /// @notice Factory registry for valid pool / gauge / rewards factories
-    /// @return The address of the factory registry
-    function factoryRegistry() external view returns (IFactoryRegistry);
 
     /// @notice Returns the current owner of the factory
     /// @dev Can be changed by the current owner via setOwner

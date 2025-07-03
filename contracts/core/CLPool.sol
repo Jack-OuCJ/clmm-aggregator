@@ -150,7 +150,6 @@ contract CLPool is ICLPool {
         address _token0,
         address _token1,
         int24 _tickSpacing,
-        address _factoryRegistry,
         uint160 _sqrtPriceX96
     ) external override {
         require(factory == address(0) && _factory != address(0));
@@ -158,7 +157,6 @@ contract CLPool is ICLPool {
         token0 = _token0;
         token1 = _token1;
         tickSpacing = _tickSpacing;
-        factoryRegistry = _factoryRegistry;
 
         maxLiquidityPerTick = Tick.tickSpacingToMaxLiquidityPerTick(_tickSpacing);
 
