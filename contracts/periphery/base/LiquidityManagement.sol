@@ -43,8 +43,7 @@ abstract contract LiquidityManagement is ICLMintCallback, PeripheryImmutableStat
     }
 
     /// @notice Add liquidity to an initialized pool
-    function addLiquidity(AddLiquidityParams memory params)
-        internal
+    function addLiquidity(AddLiquidityParams memory params) public
         returns (uint128 liquidity, uint256 amount0, uint256 amount1)
     {
         ICLPool pool = ICLPool(params.poolAddress);

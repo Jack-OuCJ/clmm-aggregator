@@ -9,6 +9,6 @@ interface IOracle {
     event PoolNotFound();
     event PoolWithConnectorNotFound();
 
-    function getRate(IERC20 srcToken, IERC20 dstToken, IERC20 connector, uint256 thresholdFilter) external view returns (uint256 rate, uint256 weight);
-    function findBestRate(IERC20 srcToken, IERC20 dstToken) external view returns (uint256 bestRate, address[] memory path, int24 bestSpacing);
+    function getRate(IERC20 srcToken, IERC20 dstToken, IERC20 connector, uint256 thresholdFilter) external returns (uint256 rate, uint256 weight);
+    function findBestRate(IERC20 srcToken, IERC20 dstToken) external returns (uint256 bestRate, address[] memory path, int24 bestSpacing);
 }

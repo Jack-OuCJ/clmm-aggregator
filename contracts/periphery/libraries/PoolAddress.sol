@@ -28,7 +28,7 @@ library PoolAddress {
     /// @param key The PoolKey
     /// @return pool The contract address of the V3 pool
     function computeAddress(address factory, PoolKey memory key) internal view returns (address pool) {
-        require(key.token0 < key.token1);
+        require(key.token0 < key.token1, "wrong key sequence");
         pool = Clones.predictDeterministicAddress({
             master: ICLFactory(factory).poolImplementation(),
             salt: keccak256(abi.encode(key.token0, key.token1, key.tickSpacing)),

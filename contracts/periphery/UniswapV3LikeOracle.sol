@@ -9,6 +9,8 @@ import "./interfaces/IOracle.sol";
 import "./interfaces/IUniswapV3Pool.sol";
 import "./libraries/OraclePrices.sol";
 import "@openzeppelin/contracts/utils//EnumerableSet.sol";
+import {CLPool} from "../core/CLPool.sol";
+import {PoolAddress} from "./libraries/PoolAddress.sol";
 
 contract UniswapV3LikeOracle is IOracle {
     using OraclePrices for OraclePrices.Data;
@@ -41,7 +43,7 @@ contract UniswapV3LikeOracle is IOracle {
         }
     }
 
-    function getRate(IERC20 srcToken, IERC20 dstToken, IERC20 connector, uint256 thresholdFilter) external override view returns (uint256 rate, uint256 weight) {
+    function getRate(IERC20 srcToken, IERC20 dstToken, IERC20 connector, uint256 thresholdFilter) external override returns (uint256 rate, uint256 weight) {
         OraclePrices.Data memory ratesAndWeights;
         if (connector == _NONE) {
             ratesAndWeights = OraclePrices.init(SUPPORTED_TICKSPACING_COUNT);
@@ -68,36 +70,25 @@ contract UniswapV3LikeOracle is IOracle {
         return ratesAndWeights.getRateAndWeight(thresholdFilter);
     }
 
-    function _getRate(IERC20 srcToken, IERC20 dstToken, int24 tickSpacing) internal view returns (uint256 rate, uint256 liquidity) {
-        (IERC20 token0, IERC20 token1) = srcToken < dstToken ? (srcToken, dstToken) : (dstToken, srcToken);
-        address pool = _getPool(address(token0), address(token1), tickSpacing);
+    function _getRate(IERC20 srcToken, IERC20 dstToken, int24 tickSpacing) internal returns (uint256 rate, uint256 liquidity) {
+        (IERC20 token0, IERC20 token1) = srcToken < dstToken ? (srcToken, dstToken) : (srcToken, dstToken);
+        address pool = PoolAddress.computeAddress(
+            FACTORY,
+            PoolAddress.getPoolKey(address(token0), address(token1), tickSpacing)
+        );
+
         if (!Address.isContract(pool)) { // !pool.isContract()
             return (0, 0);
         }
-        liquidity = IUniswapV3Pool(pool).liquidity();
+        liquidity = CLPool(pool).liquidity();
         if (liquidity == 0) {
             return (0, 0);
         }
         (uint256 sqrtPriceX96, int24 tick) = _currentState(pool);
-        int24 tickSpacing = IUniswapV3Pool(pool).tickSpacing();
+        int24 tickSpacing = CLPool(pool).tickSpacing();
         tick = tick / tickSpacing * tickSpacing;
-        int256 liquidityShiftsLeft = int256(liquidity);
-        int256 liquidityShiftsRight = int256(liquidity);
-        for (int24 i = 0; i <= _TICK_STEPS; i++) {
-            (, int256 liquidityNet) = IUniswapV3Pool(pool).ticks(tick + i * tickSpacing);
-            liquidityShiftsRight += liquidityNet;
-            liquidity = Math.min(liquidity, uint256(liquidityShiftsRight));
-            if (liquidityShiftsRight == 0) {
-                return (0, 0);
-            }
-            (, liquidityNet) = IUniswapV3Pool(pool).ticks(tick - i * tickSpacing);
-            liquidityShiftsLeft -= liquidityNet;
-            liquidity = Math.min(liquidity, uint256(liquidityShiftsLeft));
-            if (liquidityShiftsLeft == 0) {
-                return (0, 0);
-            }
-        }
-        if (srcToken == token0) {
+
+        if (srcToken == token1) {
             rate = (((1e18 * sqrtPriceX96) >> 96) * sqrtPriceX96) >> 96;
         } else {
             rate = (1e18 << 192) / sqrtPriceX96 / sqrtPriceX96;
@@ -121,7 +112,7 @@ contract UniswapV3LikeOracle is IOracle {
         (sqrtPriceX96, tick) = IUniswapV3Pool(pool).slot0();
     }
 
-    function findBestRate(IERC20 srcToken, IERC20 dstToken) external override view returns (uint256 bestRate, address[] memory path, int24 bestSpacing) {
+    function findBestRate(IERC20 srcToken, IERC20 dstToken) external override returns (uint256 bestRate, address[] memory path, int24 bestSpacing) {
         bestRate = 0; // Initialize the best rate
         address[] memory bestPath = new address[](3); // Assume the path contains up to three addresses (src -> connector -> dst)
 
@@ -129,15 +120,27 @@ contract UniswapV3LikeOracle is IOracle {
         for (uint256 tickIndex = 0; tickIndex < tickSpacings.length; tickIndex++) {
             int24 tickSpacing = tickSpacings[tickIndex];
 
+            (uint256 directRate, ) = _getRate(srcToken, dstToken, tickSpacing); // Calculate rate using the current fee
+            // Update best rate and path if the direct rate is higher
+            if (directRate > bestRate) {
+                bestRate = directRate;
+                bestPath[0] = address(srcToken);
+                bestPath[1] = address(dstToken);
+                bestSpacing = tickSpacing; // Record the best fee
+            }
+
             // Case 1: Use all possible connectors for conversion
             for (uint256 i = 0; i < _connectors.length(); i++) {
                 IERC20 connector = IERC20(_connectors.at(i));
+                if (srcToken == connector || dstToken == connector) {
+                    continue;
+                }
                 (uint256 rate0, ) = _getRate(srcToken, connector, tickSpacing); // Calculate rate using the current fee
                 (uint256 rate1, ) = _getRate(connector, dstToken, tickSpacing); // Calculate rate using the current fee
 
                 // Check if both rates are greater than zero
                 if (rate0 > 0 && rate1 > 0) {
-                    uint256 combinedRate = rate0 * rate1; // Calculate the combined rate
+                    uint256 combinedRate = rate0 * rate1 / 1 ether; // Calculate the combined rate
                     // Update best rate and path if the combined rate is higher
                     if (combinedRate > bestRate) {
                         bestRate = combinedRate;
@@ -147,16 +150,6 @@ contract UniswapV3LikeOracle is IOracle {
                         bestSpacing = tickSpacing; // Record the best fee
                     }
                 }
-            }
-
-            // Case 2: Direct conversion
-            (uint256 directRate, ) = _getRate(srcToken, dstToken, tickSpacing); // Calculate rate using the current fee
-            // Update best rate and path if the direct rate is higher
-            if (directRate > bestRate) {
-                bestRate = directRate;
-                bestPath[0] = address(srcToken);
-                bestPath[1] = address(dstToken);
-                bestSpacing = tickSpacing; // Record the best fee
             }
         }
 

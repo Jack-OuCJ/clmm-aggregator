@@ -25,6 +25,7 @@ import "./interfaces/callback/ICLMintCallback.sol";
 import "./interfaces/callback/ICLSwapCallback.sol";
 import "./interfaces/callback/ICLFlashCallback.sol";
 import "contracts/libraries/VelodromeTimeLibrary.sol";
+import {console} from "../../lib/forge-std/src/console.sol";
 
 contract CLPool is ICLPool {
     using LowGasSafeMath for uint256;
@@ -410,6 +411,7 @@ contract CLPool is ICLPool {
                 false,
                 maxLiquidityPerTick
             );
+
             flippedUpper = ticks.update(
                 tickUpper,
                 tick,
@@ -586,38 +588,6 @@ contract CLPool is ICLPool {
         }
 
         emit Burn(owner, tickLower, tickUpper, amount, amount0, amount1);
-    }
-
-    /// @inheritdoc ICLPoolActions
-    function stake(int128 stakedLiquidityDelta, int24 tickLower, int24 tickUpper, bool positionUpdate)
-        external
-        override
-        lock
-        onlyGauge
-    {
-        int24 tick = slot0.tick;
-        // Increase staked liquidity in the current tick
-        if (tick >= tickLower && tick < tickUpper) {
-            _updateRewardsGrowthGlobal();
-            stakedLiquidity = LiquidityMath.addDelta(stakedLiquidity, stakedLiquidityDelta);
-        }
-
-        if (positionUpdate) {
-            Position.Info storage nftPosition = positions.get(nft, tickLower, tickUpper);
-            Position.Info storage gaugePosition = positions.get(gauge, tickLower, tickUpper);
-
-            (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) =
-                ticks.getFeeGrowthInside(tickLower, tickUpper, tick, feeGrowthGlobal0X128, feeGrowthGlobal1X128);
-
-            // Assign the staked positions virtually to the gauge
-            nftPosition.update(-stakedLiquidityDelta, feeGrowthInside0X128, feeGrowthInside1X128, false);
-            gaugePosition.update(stakedLiquidityDelta, feeGrowthInside0X128, feeGrowthInside1X128, true);
-        }
-
-        // Update tick locations where staked liquidity needs to be added or subtracted
-        // Only update ticks if current tick is initialized
-        if (ticks[tickLower].initialized) ticks.updateStake(tickLower, stakedLiquidityDelta, false);
-        if (ticks[tickUpper].initialized) ticks.updateStake(tickUpper, stakedLiquidityDelta, true);
     }
 
     struct SwapCache {

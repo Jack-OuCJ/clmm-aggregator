@@ -6,12 +6,6 @@ import "forge-std/Script.sol";
 
 import {CLPool} from "contracts/core/CLPool.sol";
 import {CLFactory} from "contracts/core/CLFactory.sol";
-import {NonfungibleTokenPositionDescriptor} from "contracts/periphery/NonfungibleTokenPositionDescriptor.sol";
-import {NonfungiblePositionManager} from "contracts/periphery/NonfungiblePositionManager.sol";
-import {CustomSwapFeeModule} from "contracts/core/fees/CustomSwapFeeModule.sol";
-import {CustomUnstakedFeeModule} from "contracts/core/fees/CustomUnstakedFeeModule.sol";
-import {MixedRouteQuoterV1} from "contracts/periphery/lens/MixedRouteQuoterV1.sol";
-import {QuoterV2} from "contracts/periphery/lens/QuoterV2.sol";
 import {SwapRouter} from "contracts/periphery/SwapRouter.sol";
 import {Token} from "contracts/core/utils/Token.sol";
 import {WETH9} from "../contracts/core/utils/WETH.sol";
@@ -23,21 +17,12 @@ contract DeployAddress is Script {
 
     uint256 public deployPrivateKey = vm.envUint("PRIVATE_KEY_DEPLOY");
     address public deployerAddress = vm.rememberKey(deployPrivateKey);
-    string public constantsFilename = vm.envString("CONSTANTS_FILENAME");
-    string public outputFilename = vm.envString("OUTPUT_FILENAME");
     address public poolFactoryOwner = deployerAddress;
-    string public jsonConstants;
     uint256 constant INITIAL_TOKENS = 10000 ether;
 
     // deployed contracts
     CLPool public poolImplementation;
     CLFactory public poolFactory;
-    NonfungibleTokenPositionDescriptor public nftDescriptor;
-    NonfungiblePositionManager public nft;
-    CustomSwapFeeModule public swapFeeModule;
-    CustomUnstakedFeeModule public unstakedFeeModule;
-    MixedRouteQuoterV1 public mixedQuoter;
-    QuoterV2 public quoter;
     SwapRouter public swapRouter;
 
     function run() public {
@@ -84,11 +69,11 @@ contract DeployAddress is Script {
         }
 
         bytes memory bytecode_cl = type(CLPool).creationCode;
-
         bytes32 initCodeHash = keccak256(bytecode_cl);
-
-        UniswapV3LikeOracle oracle = new UniswapV3LikeOracle(address(poolFactory), initCodeHash, tickSpacings, existingConnectors);
-
+        UniswapV3LikeOracle oracle = new UniswapV3LikeOracle(address(poolFactory),
+            initCodeHash,
+            tickSpacings,
+            existingConnectors);
         swapRouter = new SwapRouter({_factory: address(poolFactory), _WETH9: address(weth), _oracleAddress: address(oracle)});
 
         for (uint256 i = 0; i < names.length; i++) {
@@ -97,8 +82,38 @@ contract DeployAddress is Script {
         console.log("PoolImplementation Address     = \"%s\";", vm.toString(address(poolImplementation)));
         console.log("poolFactory Address            = \"%s\";", vm.toString(address(poolFactory)));
         console.log("swapRouter Address             = \"%s\";", vm.toString(address(swapRouter)));
+        console.log("Oracle Address             = \"%s\";", vm.toString(address(oracle)));
         console.log("weth Address                   = \"%s\";", vm.toString(address(weth)));
 
+        // A - B pool
+        createPools(tokenAddresses[0], tokenAddresses[1], tickSpacings[0], 2 ** 95);
+        // B - C pool
+        createPools(tokenAddresses[1], tokenAddresses[2], tickSpacings[0], 2 ** 96);
+        // A - C pool
+        createPools(tokenAddresses[0], tokenAddresses[2], tickSpacings[0], 2 ** 96);
+
+        uint length = poolFactory.allPoolsLength();
+        console.log("length pool:", length);
         vm.stopBroadcast();
+    }
+
+    function createPools(address tokenA, address tokenB, int24 tickSpacing, uint160 price) internal {
+        address newPool;
+        newPool = poolFactory.createPool(tokenA, tokenB, tickSpacing, price);
+        (
+            uint160 sqrtPriceX96,
+            int24 tick,
+            uint16 observationIndex,
+            uint16 observationCardinality,
+            uint16 observationCardinalityNext,
+            bool unlocked
+        ) = CLPool(newPool).slot0();
+        console.log("Created pool:", newPool);
+        console.log("sqrtPriceX96:", uint256(sqrtPriceX96));
+        console.log("tick:", tick);
+        console.log("observationIndex:", uint256(observationIndex));
+        console.log("observationCardinality:", uint256(observationCardinality));
+        console.log("observationCardinalityNext:", uint256(observationCardinalityNext));
+        console.log("unlocked:", unlocked);
     }
 }

@@ -7,6 +7,7 @@ import "./interfaces/IFactoryRegistry.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";
 import "@nomad-xyz/src/ExcessivelySafeCall.sol";
 import "./CLPool.sol";
+import {console} from "../../lib/forge-std/src/console.sol";
 
 /// @title Canonical CL factory
 /// @notice Deploys CL pools and manages ownership and control over pool protocol fees
@@ -49,11 +50,10 @@ contract CLFactory is ICLFactory {
         emit UnstakedFeeManagerChanged(address(0), msg.sender);
         emit DefaultUnstakedFeeChanged(0, 100_000);
 
-        enableTickSpacing(1, 100);
-        enableTickSpacing(50, 500);
-        enableTickSpacing(100, 500);
-        enableTickSpacing(200, 3_000);
-        enableTickSpacing(2_000, 10_000);
+        enableTickSpacing(1, 50);
+        enableTickSpacing(10, 500);
+        enableTickSpacing(60, 3000);
+        enableTickSpacing(200, 10000);
     }
 
     /// @inheritdoc ICLFactory
@@ -65,7 +65,6 @@ contract CLFactory is ICLFactory {
         require(tokenA != tokenB);
         (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
         require(token0 != address(0));
-        require(tickSpacingToFee[tickSpacing] != 0);
         require(getPool[token0][token1][tickSpacing] == address(0));
         pool = Clones.cloneDeterministic({
             master: poolImplementation,

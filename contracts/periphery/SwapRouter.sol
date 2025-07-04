@@ -2,23 +2,23 @@
 pragma solidity =0.7.6;
 pragma abicoder v2;
 
-import "contracts/core/libraries/SafeCast.sol";
-import "contracts/core/libraries/TickMath.sol";
-import "contracts/core/interfaces/ICLPool.sol";
-
-import "./interfaces/ISwapRouter.sol";
+import "./base/LiquidityManagement.sol";
 import "./base/PeripheryImmutableState.sol";
-import "./base/PeripheryValidation.sol";
+
 import "./base/PeripheryPaymentsWithFee.sol";
-import "./base/Multicall.sol";
+import "./base/PeripheryValidation.sol";
 import "./base/SelfPermit.sol";
+import "./interfaces/IOracle.sol";
+import "./interfaces/ISwapRouter.sol";
+import "./interfaces/external/IWETH9.sol";
+import "./libraries/CallbackValidation.sol";
 import "./libraries/Path.sol";
 import "./libraries/PoolAddress.sol";
-import "./libraries/CallbackValidation.sol";
-import "./interfaces/external/IWETH9.sol";
-import "./interfaces/IOracle.sol";
-import {ERC20} from "../../lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
+import "contracts/core/interfaces/ICLPool.sol";
+import "contracts/core/libraries/SafeCast.sol";
+import "contracts/core/libraries/TickMath.sol";
 import {Address} from "../../lib/openzeppelin-contracts/contracts/utils/Address.sol";
+import {ERC20} from "../../lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
 /// @title CL Swap Router
 /// @notice Router for stateless execution of swaps against CL
@@ -27,8 +27,8 @@ contract SwapRouter is
     PeripheryImmutableState,
     PeripheryValidation,
     PeripheryPaymentsWithFee,
-    Multicall,
-    SelfPermit
+    SelfPermit,
+    LiquidityManagement
 {
     using Path for bytes;
     using SafeCast for uint256;
@@ -112,7 +112,6 @@ contract SwapRouter is
         external
         payable
         override
-        checkDeadline(params.deadline)
         returns (uint256 amountOut)
     {
         amountOut = exactInputInternal(
@@ -244,7 +243,7 @@ contract SwapRouter is
         refundETH();
     }
 
-    function findBestExchangePath(IERC20 srcToken, IERC20 dstToken, uint256 amountIn) external view returns (address[] memory path, uint256 amountOut) {
+    function findBestExchangePath(IERC20 srcToken, IERC20 dstToken, uint256 amountIn) external returns (address[] memory path, uint256 amountOut) {
         require(amountIn > 0, "Invalid amount");
 
         uint256 bestRate = 0;
@@ -270,7 +269,6 @@ contract SwapRouter is
     function optimizedExactInput(OptimizedSwapParams memory params)
         external
         payable
-        checkDeadline(params.deadline)
         returns (uint256 amountOut)
     {
         address payer = msg.sender;
@@ -282,39 +280,39 @@ contract SwapRouter is
         require(path.length > 0, "No path found");
         bytes memory encodedPath;
 
-        if (path.length > 2) {
+        if (path[2] != address(0)) {
             encodedPath = abi.encodePacked(address(path[0]), int24(bestSpacing), address(path[1]));
-            params.amountIn =  exactInputInternal(
+            params.amountIn = exactInputInternal(
                 params.amountIn,
                 address(this),
                 params.sqrtPriceLimitX96,
                 SwapCallbackData({
                     path: encodedPath,
-                    payer: msg.sender
+                    payer: payer
                 })
             );
 
             payer = address(this); // at this point, the caller has paid
             encodedPath = abi.encodePacked(address(path[1]), int24(bestSpacing), address(path[2]));
 
-            amountOut =  exactInputInternal(
+            amountOut = exactInputInternal(
                 params.amountIn,
                 params.recipient,
                 params.sqrtPriceLimitX96,
                 SwapCallbackData({
                     path: encodedPath,
-                    payer: msg.sender
+                    payer: payer
                 })
             );
         } else {
             encodedPath = abi.encodePacked(address(path[0]), int24(bestSpacing), address(path[1]));
-            amountOut =  exactInputInternal(
+            amountOut = exactInputInternal(
                 params.amountIn,
                 params.recipient,
                 params.sqrtPriceLimitX96,
                 SwapCallbackData({
                     path: encodedPath,
-                    payer: msg.sender
+                    payer: payer
                 })
             );
         }
